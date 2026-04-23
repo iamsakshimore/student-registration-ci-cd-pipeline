@@ -2,24 +2,46 @@ pipeline {
     agent any
 
     environment {
+        VENV = 'venv'
         FLASK_LOG = 'flask.log'
         SOCAT_LOG = 'socat.log'
+        PORT = '5000'
+        EXPOSE_PORT = '5050'
     }
 
     stages {
 
-        stage('Clone Repo') {
+        stage('Clone Repository') {
             steps {
                 git branch: 'main', url: 'https://github.com/iamsakshimore/stud-reg-flask-app.git'
             }
         }
 
-        stage('Setup Environment') {
+        stage('Clean Workspace') {
             steps {
                 sh '''
-                python3 -m venv venv
-                ./venv/bin/pip install --upgrade pip
-                ./venv/bin/pip install -r requirements.txt
+                rm -rf $VENV flask.log socat.log flask_pid.txt socat_pid.txt || true
+                '''
+            }
+        }
+
+        stage('Setup Python Environment') {
+            steps {
+                sh '''
+                python3 --version
+                python3 -m venv $VENV
+
+                . $VENV/bin/activate
+                pip install --upgrade pip
+                pip install -r requirements.txt
+                '''
+            }
+        }
+
+        stage('Install System Dependencies') {
+            steps {
+                sh '''
+                which socat || sudo apt-get update && sudo apt-get install -y socat
                 '''
             }
         }
@@ -29,43 +51,70 @@ pipeline {
                 sh '''
                 pkill -f app.py || true
 
-                nohup ./venv/bin/python3 app.py > $FLASK_LOG 2>&1 &
+                echo "Starting Flask app..."
+                nohup ./$VENV/bin/python3 app.py > $FLASK_LOG 2>&1 &
                 echo $! > flask_pid.txt
 
                 sleep 10
 
-                ps -p $(cat flask_pid.txt) || exit 1
+                echo "===== Flask Logs ====="
+                cat $FLASK_LOG
+
+                # Check if process is running
+                ps -p $(cat flask_pid.txt) > /dev/null || {
+                    echo "Flask app failed to start!"
+                    exit 1
+                }
                 '''
             }
         }
 
-        stage('Expose Port (socat)') {
+        stage('Expose App using socat') {
             steps {
                 sh '''
                 pkill socat || true
 
-                nohup socat TCP-LISTEN:5050,fork TCP:localhost:5000 > $SOCAT_LOG 2>&1 &
+                echo "Starting socat..."
+                nohup socat TCP-LISTEN:$EXPOSE_PORT,fork TCP:localhost:$PORT > $SOCAT_LOG 2>&1 &
                 echo $! > socat_pid.txt
 
-                for i in {1..10}; do
-                  ss -tuln | grep 5050 && break
-                  sleep 3
-                done
+                sleep 5
+
+                echo "===== Socat Logs ====="
+                cat $SOCAT_LOG
                 '''
             }
         }
 
-        stage('Test App') {
+        stage('Health Check') {
             steps {
-                sh 'curl http://10.10.2.242:5050'
+                sh '''
+                echo "Checking application..."
+                for i in {1..10}; do
+                    curl -s http://localhost:$EXPOSE_PORT && break
+                    echo "Retrying..."
+                    sleep 3
+                done
+                '''
             }
         }
     }
 
     post {
         always {
-            sh 'pkill -f app.py || true'
-            sh 'pkill socat || true'
+            sh '''
+            echo "Cleaning up processes..."
+            pkill -f app.py || true
+            pkill socat || true
+            '''
+        }
+
+        success {
+            echo " Deployment Successful!"
+        }
+
+        failure {
+            echo "Deployment Failed! Check logs above."
         }
     }
 }
