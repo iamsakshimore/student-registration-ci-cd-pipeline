@@ -26,32 +26,14 @@ pipeline {
             }
         }
 
-        stage('Install System Dependencies') {
-            steps {
-                sh '''
-                echo "Installing system dependencies..."
-
-                # Install Python venv + pip
-                sudo apt-get update
-                sudo apt-get install -y python3.12-venv python3-pip
-
-                # Install socat only if not present
-                if ! command -v socat >/dev/null 2>&1; then
-                    sudo apt-get install -y socat
-                fi
-                '''
-            }
-        }
-
         stage('Setup Python Environment') {
             steps {
                 sh '''
-                echo "Setting up Python virtual environment..."
+                echo "Setting up Python environment..."
 
                 python3 --version
                 python3 -m venv $VENV
 
-                # Use direct path instead of activate
                 $VENV/bin/pip install --upgrade pip
                 $VENV/bin/pip install -r requirements.txt
                 '''
@@ -61,7 +43,7 @@ pipeline {
         stage('Run Flask App') {
             steps {
                 sh '''
-                echo "Starting Flask application..."
+                echo "Starting Flask app..."
 
                 pkill -f app.py || true
 
@@ -73,9 +55,8 @@ pipeline {
                 echo "===== Flask Logs ====="
                 cat $FLASK_LOG || true
 
-                # Check if Flask started
                 ps -p $(cat flask_pid.txt) > /dev/null || {
-                    echo "Flask app failed to start!"
+                    echo "Flask app failed!"
                     exit 1
                 }
                 '''
@@ -103,18 +84,18 @@ pipeline {
         stage('Health Check') {
             steps {
                 sh '''
-                echo "Checking application health..."
+                echo "Checking application..."
 
                 for i in {1..10}; do
                     if curl -s http://localhost:$EXPOSE_PORT > /dev/null; then
-                        echo "Application is UP!"
+                        echo "App is UP!"
                         exit 0
                     fi
                     echo "Retrying..."
                     sleep 3
                 done
 
-                echo "Application failed health check!"
+                echo "Health check failed!"
                 exit 1
                 '''
             }
@@ -124,7 +105,7 @@ pipeline {
     post {
         always {
             sh '''
-            echo "Cleaning up processes..."
+            echo "Cleaning up..."
             pkill -f app.py || true
             pkill socat || true
             '''
@@ -135,7 +116,7 @@ pipeline {
         }
 
         failure {
-            echo "Deployment Failed! Check logs above."
+            echo "Deployment Failed!"
         }
     }
 }
