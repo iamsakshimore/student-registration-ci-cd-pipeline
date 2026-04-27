@@ -20,7 +20,7 @@ pipeline {
         stage('Clone Repository') {
             steps {
                 dir('app') {
-                    git branch: 'main', url: 'https://github.com/iamsakshimore/stud-reg-flask-app.git'
+                    git branch: 'master', url: 'https://github.com/iamsakshimore/stud-reg-flask-app.git'
                 }
             }
         }
