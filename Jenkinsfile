@@ -11,55 +11,66 @@ pipeline {
 
     stages {
 
-        stage('Clone Repository') {
+        stage('Clean Workspace') {
             steps {
-                git branch: 'main', url: 'https://github.com/iamsakshimore/stud-reg-flask-app.git'
+                deleteDir()
             }
         }
 
-        stage('Clean Workspace') {
+        stage('Clone Repository') {
             steps {
-                sh '''
-                echo "Cleaning workspace..."
-                rm -rf $VENV flask.log socat.log flask_pid.txt socat_pid.txt || true
-                '''
+                dir('app') {
+                    git branch: 'main', url: 'https://github.com/iamsakshimore/stud-reg-flask-app.git'
+                }
             }
         }
 
         stage('Setup Python Environment') {
             steps {
-                sh '''
-                echo "Setting up Python environment..."
+                dir('app') {
+                    sh '''
+                    echo "Listing files..."
+                    ls -la
 
-                python3 --version
-                python3 -m venv $VENV
+                    echo "Setting up Python environment..."
+                    python3 --version
 
-                $VENV/bin/pip install --upgrade pip
-                $VENV/bin/pip install -r requirements.txt
-                '''
+                    python3 -m venv $VENV
+                    $VENV/bin/pip install --upgrade pip
+
+                    if [ ! -f requirements.txt ]; then
+                        echo "ERROR: requirements.txt not found!"
+                        exit 1
+                    fi
+
+                    $VENV/bin/pip install -r requirements.txt
+                    '''
+                }
             }
         }
 
         stage('Run Flask App') {
             steps {
-                sh '''
-                echo "Starting Flask app..."
+                dir('app') {
+                    sh '''
+                    echo "Starting Flask app..."
 
-                pkill -f app.py || true
+                    pkill -f app.py || true
 
-                nohup $VENV/bin/python3 app.py > $FLASK_LOG 2>&1 &
-                echo $! > flask_pid.txt
+                    nohup $VENV/bin/python3 app.py > $FLASK_LOG 2>&1 &
+                    echo $! > flask_pid.txt
 
-                sleep 10
+                    sleep 10
 
-                echo "===== Flask Logs ====="
-                cat $FLASK_LOG || true
+                    echo "===== Flask Logs ====="
+                    cat $FLASK_LOG || true
 
-                ps -p $(cat flask_pid.txt) > /dev/null || {
-                    echo "Flask app failed!"
-                    exit 1
+                    ps -p $(cat flask_pid.txt) > /dev/null || {
+                        echo "Flask app failed!"
+                        exit 1
+                    }
+                    '''
                 }
-                '''
             }
         }
 
